@@ -1,0 +1,29 @@
+version: '3'
+services:
+  python_app:
+    build: .
+    ports:
+      - "9000:9000"
+    depends_on:
+      - postgres
+    environment:
+      - DATABASE_URL=postgres://$(cat /app/config/secret.json | jq -r '.POSTGRES_USER'):$(cat /app/config/secret.json | jq -r '.POSTGRES_PASSWORD')@postgres:5432/$(cat /app/config/secret.json | jq -r '.POSTGRES_DB')
+    volumes:
+      - ./config:/app/config
+
+  postgres:
+    image: postgres
+    environment:
+      - POSTGRES_DB=$(cat /app/config/secret.json | jq -r '.POSTGRES_DB')
+    volumes:
+      - ./config:/app/config
+      - pgdata:/var/lib/postgresql/data
+      - ./config/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+volumes:
+  pgdata:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: './backup'
