@@ -10,7 +10,7 @@ services:
 #      - DATABASE_URL=postgres://$(cat /app/config/secret.json | jq -r '.POSTGRES_USER'):$(cat /app/config/secret.json | jq -r '.POSTGRES_PASSWORD')@postgres:5432/$(cat /app/config/secret.json | jq -r '.POSTGRES_DB')
     volumes:
       - ./config:/app/config
-#    restart: on-failure
+    restart: on-failure
 
   postgres:
     image: postgres
@@ -23,6 +23,7 @@ services:
     volumes:
       - ./config:/app/config
       - ./config/birdnest.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: on-failure
 
 # why the following lines are not usable - volume declared rewrite the environment variable in the container
 # maybe there's a way to specify the volume in such a way that the host env will not rewrite the container env

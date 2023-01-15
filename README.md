@@ -30,3 +30,8 @@ The data query and update is performed every 3 seconds because the drone data is
    commands has to be run as seen in the commands.txt
 2. SQLAlchemy's upsert on conflict only allows for single record update and is hence not that great. (write own sql is
    better)
+
+## How to deploy
+1. install docker on your host machine 
+2. docker-compose up -d
+3. open the incoming port to your host machine for the postgresql the port used here is default (data is not sensitive since it's publicly available, probably)
