@@ -6,24 +6,35 @@ services:
       - "9000:9000"
     depends_on:
       - postgres
-    environment:
-      - DATABASE_URL=postgres://$(cat /app/config/secret.json | jq -r '.POSTGRES_USER'):$(cat /app/config/secret.json | jq -r '.POSTGRES_PASSWORD')@postgres:5432/$(cat /app/config/secret.json | jq -r '.POSTGRES_DB')
+#    environment:
+#      - DATABASE_URL=postgres://$(cat /app/config/secret.json | jq -r '.POSTGRES_USER'):$(cat /app/config/secret.json | jq -r '.POSTGRES_PASSWORD')@postgres:5432/$(cat /app/config/secret.json | jq -r '.POSTGRES_DB')
     volumes:
       - ./config:/app/config
+#    restart: on-failure
 
   postgres:
     image: postgres
+    ports:
+      - "5432:5432"
     environment:
-      - POSTGRES_DB=$(cat /app/config/secret.json | jq -r '.POSTGRES_DB')
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - ./config:/app/config
-      - pgdata:/var/lib/postgresql/data
-      - ./config/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./config/birdnest.sql:/docker-entrypoint-initdb.d/init.sql
 
-volumes:
-  pgdata:
-    driver: local
-    driver_opts:
-      type: 'none'
-      o: 'bind'
-      device: './backup'
+# why the following lines are not usable - volume declared rewrite the environment variable in the container
+# maybe there's a way to specify the volume in such a way that the host env will not rewrite the container env
+# unsure
+#      - pgdata:/var/lib/postgresql/data
+#
+#    restart: on-failure
+#
+#volumes:
+#  pgdata:
+#    driver: local
+#    driver_opts:
+#      type: 'none'
+#      o: 'bind'
+#      device: '/Users/wit/DataspellProjects/birdnest_backend/backup'

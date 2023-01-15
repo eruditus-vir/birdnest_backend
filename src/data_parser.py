@@ -2,7 +2,7 @@ import datetime
 from xml.etree import ElementTree as ET
 from dateutil import parser
 from typing import List, Optional
-from constants import CENTER_X, CENTER_Y, RADIUS
+from src.constants import CENTER_X, CENTER_Y, RADIUS
 
 
 class ViolatedPilotInformation:

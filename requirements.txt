@@ -1,3 +1,4 @@
 requests
 SQLAlchemy
 psycopg2
+python-dateutil

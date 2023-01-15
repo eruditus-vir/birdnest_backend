@@ -1,0 +1,3 @@
+POSTGRES_DB=$(cat /app/config/secret.json | jq -r '.POSTGRES_DB') POSTGRES_USER=$(cat /app/config/secret.json | jq -r '.POSTGRES_USER') POSTGRES_PASSWORD=$(cat /app/config/secret.json | jq -r '.POSTGRES_PASSWORD') docker-compose up --force-recreate --build -d
+POSTGRES_DB=$(cat ./config/secret.json | jq -r '.POSTGRES_DB') POSTGRES_USER=$(cat ./config/secret.json | jq -r '.POSTGRES_USER') POSTGRES_PASSWORD=$(cat ./config/secret.json | jq -r '.POSTGRES_PASSWORD') docker-compose up --force-recreate --build -d
+

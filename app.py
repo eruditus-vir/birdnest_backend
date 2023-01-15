@@ -3,9 +3,16 @@ from src.database_communicator import DBCom
 import time
 import os
 import logging
+import json
 
-# TODO: maybe change the DB url to directly become postgresql+psycopg2
-DBURL = os.getenv('DATABASE_URL').replace("postgres://", "postgresql+psycopg2://")
+logging.getLogger().setLevel(logging.ERROR)
+
+config_f = open('./config/secret.json')
+DBCONFIG = json.load(config_f)
+# os.getenv('DATABASE_URL').replace("postgres://", "postgresql+psycopg2://")
+DBURL = "postgresql+psycopg2://{}:{}@postgres/{}".format(DBCONFIG['POSTGRES_USER'],
+                                                         DBCONFIG['POSTGRES_PASSWORD'],
+                                                         DBCONFIG['POSTGRES_DB'])
 dbcom = DBCom(DBURL)
 
 

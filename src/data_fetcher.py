@@ -1,5 +1,5 @@
 import requests
-from data_parser import ViolatedPilotInformation, DeviceInformation, DroneInformation, DroneCollection
+from src.data_parser import ViolatedPilotInformation, DeviceInformation, DroneInformation, DroneCollection
 import urllib.parse as urlparse
 from xml.etree import ElementTree as ET
 import json

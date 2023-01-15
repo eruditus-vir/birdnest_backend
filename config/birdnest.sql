@@ -1,3 +1,5 @@
+ALTER ROLE postgres SUPERUSER;
+
 CREATE TABLE "drones" (
                           "serial_number" varchar PRIMARY KEY,
                           "manufacturer" varchar,
@@ -8,12 +10,11 @@ CREATE TABLE "drones" (
                           "position_x" float8,
                           "position_y" float8,
                           "altitude" float8,
-                          "snapshot_timestamp" datetime,
+                          "snapshot_timestamp" timestamp,
                           "is_violating_ndz" boolean,
-                          "violated_pilot_id" int UNIQUE,
-                          "created_at" datetime,
-                          "update_at" datetime,
-                          PRIMARY KEY ("serial_number")
+                          "violated_pilot_id" varchar UNIQUE,
+                          "created_at" timestamp,
+                          "updated_at" timestamp
 );
 
 CREATE TABLE "violated_pilots" (
@@ -23,18 +24,20 @@ CREATE TABLE "violated_pilots" (
                                    "phone_number" varchar,
                                    "email" varchar,
                                    "created_dt" timestamp,
-                                   "last_violation_at" datetime,
-                                   PRIMARY KEY ("pilot_id")
+                                   "last_violation_at" timestamp,
+                                   "position_flown_x" float8,
+                                   "position_flown_y" float8
 );
 
 CREATE INDEX ON "drones" ("serial_number");
 
 CREATE INDEX ON "drones" ("violated_pilot_id");
 
-CREATE INDEX ON "drones" ("update_at");
+CREATE INDEX ON "drones" ("updated_at");
 
 CREATE INDEX ON "violated_pilots" ("pilot_id");
 
 CREATE INDEX ON "violated_pilots" ("last_violation_at");
 
 ALTER TABLE "violated_pilots" ADD FOREIGN KEY ("pilot_id") REFERENCES "drones" ("violated_pilot_id") ON DELETE CASCADE ON UPDATE NO ACTION;
+

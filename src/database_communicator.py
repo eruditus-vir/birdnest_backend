@@ -5,9 +5,9 @@ import sqlalchemy as sa
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import relationship, Session
-from data_parser import DroneInformation, ViolatedPilotInformation
+from src.data_parser import DroneInformation, ViolatedPilotInformation
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 from typing import List, Tuple, Optional
 import logging
 
@@ -23,11 +23,27 @@ class ViolatedPilots(Base):
     email = sa.Column(sa.VARCHAR)
     created_dt = sa.Column(sa.DATETIME)
     last_violation_at = sa.Column(sa.DATETIME, index=True)
+    position_flown_x = sa.Column(sa.FLOAT)
+    position_flown_y = sa.Column(sa.FLOAT)
     # this relationship means that once violated pilots is deleted, foreign key in drone should be set to NULL
     drone = relationship("Drones")
 
+    def to_dict(self):
+        return {
+            'pilot_id': self.pilot_id,
+            'first_name': self.first_name,
+            'last_name': self.last_name,
+            'phone_number': self.phone_number,
+            'email': self.email,
+            'created_dt': self.created_dt,
+            'last_violation_at': self.last_violation_at
+        }
+
     @classmethod
-    def from_violated_pilots(cls, pi: ViolatedPilotInformation) -> 'ViolatedPilots':
+    def from_violated_pilots(cls,
+                             pi: ViolatedPilotInformation,
+                             position_flown_x: float,
+                             position_flown_y: float) -> 'ViolatedPilots':
         return ViolatedPilots(
             pilot_id=pi.pilot_id,
             first_name=pi.first_name,
@@ -35,7 +51,9 @@ class ViolatedPilots(Base):
             phone_number=pi.phone_number,
             email=pi.email,
             created_dt=pi.created_dt,
-            last_violation_at=datetime.datetime.now().isoformat(),
+            last_violation_at=datetime.datetime.now(),
+            position_flown_x=position_flown_x,
+            position_flown_y=position_flown_y
         )
 
 
@@ -56,13 +74,33 @@ class Drones(Base):
     created_at = sa.Column(sa.DATETIME)
     updated_at = sa.Column(sa.DATETIME, index=True)
     # this relationship basically delete associated pilot once drone is deleted
-    violated_pilot = relationship("ViolatedPilots", cascade="all, delete-orphan")
+    violated_pilot = relationship("ViolatedPilots", cascade="all, delete")
+
+    def to_dict(self):
+        return {
+            'serial_number': self.serial_number,
+            'manufacturer': self.manufacturer,
+            'mac': self.mac,
+            'ipv4': self.ipv4,
+            'ipv6': self.ipv6,
+            'firmware': self.firmware,
+            'position_x': self.position_x,
+            'position_y': self.position_y,
+            'altitude': self.altitude,
+            'is_violating_ndz': self.is_violating_ndz,
+            'violated_pilot_id': self.violated_pilot_id,
+            'created_at': self.created_at,
+            'updated_at': self.updated_at,
+        }
 
     @classmethod
     def from_drone_information(cls, di: DroneInformation) -> Tuple['Drones', Optional[ViolatedPilots]]:
         pilot = None
-        if di.pilot_information is not None:
-            pilot = ViolatedPilots.from_violated_pilots(di.pilot_information)
+        if di.violated_ndz:
+            pilot = ViolatedPilots.from_violated_pilots(di.pilot_information,
+                                                        di.position_x,
+                                                        di.position_y)
+        logging.info("printing pilot {}".format(pilot))
         return (Drones(serial_number=di.serial_number,
                        manufacturer=di.manufacturer,
                        mac=di.mac,
@@ -73,9 +111,9 @@ class Drones(Base):
                        position_y=di.position_y,
                        altitude=di.altitude,
                        is_violating_ndz=di.violated_ndz,
-                       created_at=datetime.datetime.now().isoformat(),
-                       updated_at=datetime.datetime.now().isoformat(),
-                       violated_pilot_id=pilot
+                       created_at=datetime.datetime.now(),
+                       updated_at=datetime.datetime.now(),
+                       violated_pilot_id=pilot.pilot_id if pilot is not None else None
                        ), pilot)
 
 
@@ -84,29 +122,51 @@ class DBCom:
                  connection_url: str):
         self.engine = create_engine(connection_url,
                                     isolation_level='SERIALIZABLE')
+        # metadata = MetaData(self.engine)
+        # metadata.create_all()
 
     def upsert_drones_and_violated_pilots(self,
                                           drones: List[Drones]):
         all_drones, all_violated_pilot = tuple(zip(*[Drones.from_drone_information(di) for di in drones]))
-        all_drones = list(all_drones)
+        all_drones: List[Drones] = list(all_drones)
         logging.info("Received the following drones: {}".format(all_drones))
         logging.info("The following ")
-        all_violated_pilot = [p for p in all_violated_pilot if p is not None]
+        all_violated_pilot: List[ViolatedPilots] = [p for p in all_violated_pilot if p is not None]
         session = Session(self.engine)
         # first upsert pilots so that all foreign keys of drones are present
-        stmt1 = postgresql_insert(ViolatedPilots).values(all_violated_pilot)
-        stmt1 = stmt1.on_conflict_do_update(index_elements=[ViolatedPilots.pilot_id])
-        session.execute(stmt1)
-        session.commit()
         # upsert drones ensure that on conflict do not update violated_pilot_id
         # this is because we want to keep violated pilot there if they recent violated the zone
-        stmt2 = postgresql_insert(Drones).values(all_drones)
-        # exclude pilot because we handle that later in delete violated pilot
-        stmt2 = stmt2.on_conflict_do_update(index_elements=[Drones.serial_number],
-                                            set_=dict(created_at=stmt2.excluded.created_at,
-                                                      violated_pilot_id=stmt2.excluded.violated_pilot_id))
-        session.execute(stmt2)
-        session.commit()
+        logging.info("Upsert Drones")
+        if len(all_drones) > 0:
+            for d in all_drones:
+                stmt2 = postgresql_insert(Drones).values(d.to_dict())
+                logging.info("inserting {}".format(d.to_dict()))
+                # exclude pilot because we handle that later in delete violated pilot
+                update_dict = dict(updated_at=d.updated_at, position_x=d.position_x, position_y=d.position_y,
+                                   altitude=d.altitude, is_violating_ndz=d.is_violating_ndz)
+                if d.violated_pilot_id is not None:
+                    update_dict = dict(violated_pilot_id=d.violated_pilot_id)
+                stmt2 = stmt2.on_conflict_do_update(index_elements=[Drones.serial_number],
+                                                    set_=update_dict)
+                session.execute(stmt2)
+                session.commit()
+        logging.info("Upsert pilots")
+        if len(all_violated_pilot) > 0:
+            # TODO: maybe find a way to make this faster but considering the few data points per update this is fine.
+            # it's good thing we use our own DB and not RDS because write is going to cost ALOT.
+            # ideal soln: write your own sql statement for this upsert but I lack time
+            for vp in all_violated_pilot:
+                stmt1 = postgresql_insert(ViolatedPilots).values(vp.to_dict())
+                stmt1 = stmt1.on_conflict_do_update(  # constraint=vp.pilot_id,
+                    index_elements=[ViolatedPilots.pilot_id],
+                    set_=dict(
+                        last_violation_at=vp.last_violation_at,
+                        position_flown_x=vp.position_flown_x,
+                        position_flown_y=vp.position_flown_y
+                    ))
+                session.execute(stmt1)
+                session.commit()
+
         session.close()
 
     def delete_violated_pilot(self):
@@ -118,11 +178,19 @@ class DBCom:
         :return:
         """
         current_time = datetime.datetime.now()
-        ten_minutes_ago = (current_time - datetime.timedelta(minutes=10)).isoformat()
+        ten_minutes_ago = (current_time - datetime.timedelta(minutes=10))
         session = Session(self.engine)
         # associated foreign key in drone should become null
-        session.execute(delete(ViolatedPilots).where(ViolatedPilots.last_violation_at < ten_minutes_ago))
+        results = session.execute(
+            delete(ViolatedPilots).where(ViolatedPilots.last_violation_at < ten_minutes_ago).returning(
+                ViolatedPilots.pilot_id
+            )).fetchall()
         session.commit()
+        # update to null
+        for r in results:
+            session.execute(
+                update(Drones).where(Drones.violated_pilot_id == r['pilot_id']).values(violated_pilot_id=None))
+            session.commit()
         session.close()
 
     def delete_drones(self):
@@ -131,7 +199,7 @@ class DBCom:
         :return:
         """
         current_time = datetime.datetime.now()
-        ten_minutes_ago = (current_time - datetime.timedelta(minutes=10)).isoformat()
+        ten_minutes_ago = (current_time - datetime.timedelta(minutes=10))
         session = Session(self.engine)
         session.execute(delete(Drones).where(Drones.updated_at < ten_minutes_ago))
         session.commit()
