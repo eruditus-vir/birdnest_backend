@@ -20,7 +20,7 @@ dbcom = DBCom(DBURL)
 # TODO: Logging and alot of logging
 def main():
     while True:
-        time.sleep(3)
+        time.sleep(2)
         try:
             data_fetcher = DataFetcher()
             dbcom.upsert_drones_and_violated_pilots(data_fetcher.drone_collection.drones)

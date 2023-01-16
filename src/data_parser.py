@@ -3,6 +3,7 @@ from xml.etree import ElementTree as ET
 from dateutil import parser
 from typing import List, Optional
 from src.constants import CENTER_X, CENTER_Y, RADIUS
+from src.utils import distance_from_location
 
 
 class ViolatedPilotInformation:
@@ -88,7 +89,8 @@ class DroneInformation:
         :param radius:
         :return:
         """
-        return (x - center_x) ** 2 + (y - center_y) ** 2 <= radius ** 2
+        dist = distance_from_location(x, y, center_x, center_y)
+        return dist <= radius
 
     @classmethod
     def from_xml_node(cls, node: ET.Element, snapshot_timestamp: datetime.datetime) -> 'DroneInformation':
