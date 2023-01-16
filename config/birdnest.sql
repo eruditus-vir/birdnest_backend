@@ -25,8 +25,10 @@ CREATE TABLE "violated_pilots" (
                                    "email" varchar,
                                    "created_dt" timestamp,
                                    "last_violation_at" timestamp,
-                                   "position_flown_x" float8,
-                                   "position_flown_y" float8
+                                   "last_violation_x" float8,
+                                   "last_violation_y" float8,
+                                   "nearest_violation_x" float8,
+                                   "nearest_violation_y" float8
 );
 
 CREATE INDEX ON "drones" ("serial_number");

@@ -5,11 +5,12 @@ import os
 import logging
 import json
 
-logging.getLogger().setLevel(logging.ERROR)
+logging.getLogger().setLevel(logging.WARNING)
 
 config_f = open('./config/secret.json')
 DBCONFIG = json.load(config_f)
 # os.getenv('DATABASE_URL').replace("postgres://", "postgresql+psycopg2://")
+# TODO: maybe make port changeable
 DBURL = "postgresql+psycopg2://{}:{}@postgres/{}".format(DBCONFIG['POSTGRES_USER'],
                                                          DBCONFIG['POSTGRES_PASSWORD'],
                                                          DBCONFIG['POSTGRES_DB'])

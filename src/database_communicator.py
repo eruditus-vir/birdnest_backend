@@ -7,8 +7,10 @@ from sqlalchemy import ForeignKey
 from sqlalchemy.orm import relationship, Session
 from src.data_parser import DroneInformation, ViolatedPilotInformation
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
-from sqlalchemy import delete, update
+from sqlalchemy import delete, update, select
 from typing import List, Tuple, Optional
+from src.utils import distance_from_location
+from src.constants import CENTER_Y, CENTER_X
 import logging
 
 Base = declarative_base()
@@ -23,8 +25,10 @@ class ViolatedPilots(Base):
     email = sa.Column(sa.VARCHAR)
     created_dt = sa.Column(sa.DATETIME)
     last_violation_at = sa.Column(sa.DATETIME, index=True)
-    position_flown_x = sa.Column(sa.FLOAT)
-    position_flown_y = sa.Column(sa.FLOAT)
+    last_violation_x = sa.Column(sa.FLOAT)
+    last_violation_y = sa.Column(sa.FLOAT)
+    nearest_violation_x = sa.Column(sa.FLOAT)
+    nearest_violation_y = sa.Column(sa.FLOAT)
     # this relationship means that once violated pilots is deleted, foreign key in drone should be set to NULL
     drone = relationship("Drones")
 
@@ -36,7 +40,11 @@ class ViolatedPilots(Base):
             'phone_number': self.phone_number,
             'email': self.email,
             'created_dt': self.created_dt,
-            'last_violation_at': self.last_violation_at
+            'last_violation_at': self.last_violation_at,
+            'last_violation_x': self.last_violation_x,
+            'last_violation_y': self.last_violation_y,
+            'nearest_violation_x': self.nearest_violation_x,
+            'nearest_violation_y': self.nearest_violation_y
         }
 
     @classmethod
@@ -52,8 +60,10 @@ class ViolatedPilots(Base):
             email=pi.email,
             created_dt=pi.created_dt,
             last_violation_at=datetime.datetime.now(),
-            position_flown_x=position_flown_x,
-            position_flown_y=position_flown_y
+            last_violation_x=position_flown_x,
+            last_violation_y=position_flown_y,
+            nearest_violation_x=position_flown_x,  # this is used for comparison at the update stage later
+            nearest_violation_y=position_flown_y
         )
 
 
@@ -100,7 +110,6 @@ class Drones(Base):
             pilot = ViolatedPilots.from_violated_pilots(di.pilot_information,
                                                         di.position_x,
                                                         di.position_y)
-        logging.info("printing pilot {}".format(pilot))
         return (Drones(serial_number=di.serial_number,
                        manufacturer=di.manufacturer,
                        mac=di.mac,
@@ -130,17 +139,14 @@ class DBCom:
         all_drones, all_violated_pilot = tuple(zip(*[Drones.from_drone_information(di) for di in drones]))
         all_drones: List[Drones] = list(all_drones)
         logging.info("Received the following drones: {}".format(all_drones))
-        logging.info("The following ")
         all_violated_pilot: List[ViolatedPilots] = [p for p in all_violated_pilot if p is not None]
         session = Session(self.engine)
         # first upsert pilots so that all foreign keys of drones are present
         # upsert drones ensure that on conflict do not update violated_pilot_id
         # this is because we want to keep violated pilot there if they recent violated the zone
-        logging.info("Upsert Drones")
         if len(all_drones) > 0:
             for d in all_drones:
                 stmt2 = postgresql_insert(Drones).values(d.to_dict())
-                logging.info("inserting {}".format(d.to_dict()))
                 # exclude pilot because we handle that later in delete violated pilot
                 update_dict = dict(updated_at=d.updated_at, position_x=d.position_x, position_y=d.position_y,
                                    altitude=d.altitude, is_violating_ndz=d.is_violating_ndz)
@@ -150,20 +156,47 @@ class DBCom:
                                                     set_=update_dict)
                 session.execute(stmt2)
                 session.commit()
-        logging.info("Upsert pilots")
+        logging.info("Received the following pilots: {}".format(all_violated_pilot))
         if len(all_violated_pilot) > 0:
             # TODO: maybe find a way to make this faster but considering the few data points per update this is fine.
             # it's good thing we use our own DB and not RDS because write is going to cost ALOT.
             # ideal soln: write your own sql statement for this upsert but I lack time
             for vp in all_violated_pilot:
                 stmt1 = postgresql_insert(ViolatedPilots).values(vp.to_dict())
-                stmt1 = stmt1.on_conflict_do_update(  # constraint=vp.pilot_id,
+                update_dict = dict(
+                    last_violation_at=vp.last_violation_at,
+                    last_violation_x=vp.last_violation_x,
+                    last_violation_y=vp.last_violation_y,
+                )
+
+                # following block of code is for update nearest violation locations
+                logging.info("checking piklot in db")
+
+                pilot_in_db = session.execute(
+                    select(ViolatedPilots).where(ViolatedPilots.pilot_id == vp.pilot_id)).first()
+                session.commit()
+                logging.info(pilot_in_db)
+                if pilot_in_db is not None:
+                    pilot_in_db = pilot_in_db["ViolatedPilots"]  # needed to unpack
+                    logging.info("comparing {}".format(pilot_in_db))
+                    # logging.info(pilot_in_db.to_dict())
+                    existing_distance = distance_from_location(pilot_in_db.nearest_violation_x,
+                                                               pilot_in_db.nearest_violation_y,
+                                                               CENTER_X,
+                                                               CENTER_Y)
+                    logging.info('existing distance {}'.format(existing_distance))
+                    new_distance = distance_from_location(vp.nearest_violation_x,
+                                                          vp.nearest_violation_y,
+                                                          CENTER_X,
+                                                          CENTER_Y)
+                    logging.info('new distance {}'.format(new_distance))
+                    if new_distance < existing_distance:  # new distance is less, so nearer
+                        update_dict['nearest_violation_x'] = vp.nearest_violation_x
+                        update_dict['nearest_violation_y'] = vp.nearest_violation_y
+                logging.info('update pilot')
+                stmt1 = stmt1.on_conflict_do_update(
                     index_elements=[ViolatedPilots.pilot_id],
-                    set_=dict(
-                        last_violation_at=vp.last_violation_at,
-                        position_flown_x=vp.position_flown_x,
-                        position_flown_y=vp.position_flown_y
-                    ))
+                    set_=update_dict)
                 session.execute(stmt1)
                 session.commit()
 
